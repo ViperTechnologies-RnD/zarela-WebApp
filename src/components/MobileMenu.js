@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { Button } from './Elements/Button';
 import SlideMenu from './SlideMenu';
 import chainIdTag from '../assets/icons/chainid-tag.svg';
+import { CURRENT_NETWORK_LABEL } from '../constants';
 
 const ChainBadge = styled.div`
 	background-image: url(${chainIdTag});
@@ -22,7 +23,7 @@ const ChainBadge = styled.div`
 	font-weight: normal;
 `;
 
-const MobileMenu = ({ isOpen, onClose }) => {
+const MobileMenu = ({ isOpen, onClose, notifyOnClose, usage = 'toastify' }) => {
 	const menuItems = [
 		{
 			title: 'Home',
@@ -43,7 +44,7 @@ const MobileMenu = ({ isOpen, onClose }) => {
 			title: 'Wallet',
 			path: '/wallet/account',
 			notifications: 0,
-			badge: <ChainBadge>Ropsten</ChainBadge>,
+			badge: <ChainBadge>{CURRENT_NETWORK_LABEL}</ChainBadge>,
 		},
 	];
 
@@ -51,9 +52,10 @@ const MobileMenu = ({ isOpen, onClose }) => {
 		<SlideMenu
 			isOpen={isOpen}
 			onClose={onClose}
-			title={'Menu'}
-			cta={() => <Button variant="primary">New Request</Button>}
+			title={usage === 'notify' ? 'notifications' : 'Menu'}
+			cta={() => <Button variant='primary'>New Request</Button>}
 			listItems={menuItems}
+			usage={usage}
 		></SlideMenu>
 	);
 };

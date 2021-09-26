@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { Buffer } from 'buffer';
 import { mainContext } from '../state';
 import { useHistory } from 'react-router-dom';
 import { create } from 'ipfs-http-client';
 import styled from 'styled-components';
-import TitleBar from '../components/TitleBar/TitleBar';
-import CreateRequestForm from '../components/CreateRequestForm';
+import CreateRequestForm from '../components/createRequest/CreateRequestForm';
 import maxWidthWrapper from '../components/Elements/MaxWidth';
 import ConnectDialog from '../components/Dialog/ConnectDialog';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
 import { Persist } from 'formik-persist';
-import { toast } from '../utils';
+import { getFileNameWithExt, toast } from '../utils';
 import Dialog from '../components/Dialog';
 import { useWeb3React } from '@web3-react/core';
 import NoMobileSupportMessage from '../components/NoMobileSupportMessage';
+import { actionTypes } from '../state';
 
 const Wrapper = styled.div`
 	${maxWidthWrapper}
@@ -23,7 +22,7 @@ const Wrapper = styled.div`
 // #todo sync form data with localStorage
 const CreateRequest = () => {
 	const fileRef = useRef(null);
-	const { appState } = useContext(mainContext);
+	const { appState, dispatch } = useContext(mainContext);
 	const [showDialog, setDialog] = useState(false);
 	const history = useHistory();
 	const [isUploading, setUploading] = useState(false);
@@ -46,6 +45,7 @@ const CreateRequest = () => {
 	};
 
 	const formik = useFormik({
+		enableReinitialize: true,
 		initialValues: {
 			title: '',
 			desc: '',
@@ -75,8 +75,7 @@ const CreateRequest = () => {
 			zpaper: yup.mixed(),
 			terms: yup.boolean().required(),
 		}),
-		onSubmit: (values) => {
-			console.log(values)
+		onSubmit: async (values) => {
 			if (formik.isValid) {
 				/* to prevent the Mage from submitting the request with insufficient assets */
 				if (
@@ -93,107 +92,103 @@ const CreateRequest = () => {
 						if (account) {
 							setDialog(false);
 							if (fileRef.current.value !== null && fileRef.current.value !== '') {
-								setUploading(true);
-								setDialogMessage(
-									'in request to secure the file, so only you can access it we require your public key to encrypt the file'
-								);
-
 								const { title, desc, angelTokenPay, laboratoryTokenPay, instanceCount, category } =
 									values;
-								const reader = new FileReader();
 
-								window.ethereum
-									.request({
+								try {
+									setUploading(true);
+									setDialogMessage(
+										'to secure your files, you need to provide your encryption public key (using Metamask)'
+									);
+									const encryptionPublicKey = await window.ethereum.request({
 										method: 'eth_getEncryptionPublicKey',
 										params: [account], // you must have access to the specified account
-									})
-									.then((result) => {
-										setDialogMessage('uploading to ipfs');
+									});
+									setDialogMessage('uploading to ipfs');
 
-										const encryptionPublicKey = result;
-										reader.readAsArrayBuffer(fileRef.current.files[0]); // Read Provided File
+									const ipfs = create(process.env.REACT_APP_IPFS); // create IPFS instance, connecting to desired node
 
-										reader.onloadend = async () => {
-											const ipfs = create(process.env.REACT_APP_IPFS); // create IPFS instance, connecting to desired node
-											const buf = Buffer(reader.result); // Convert data into buffer
+									try {
+										// since it may take quite a while for a request to fulfill, we pin it
+										// on IPFS so it'd be available for later uses
+										const fileMeta = getFileNameWithExt(fileRef);
 
-											try {
-												// since it may take quite a while for a request to fulfill, we pin it
-												// on IPFS so it'd be available for later uses
-												const ipfsResponse = await ipfs.add(buf, { pin: true });
-
-												formik.setFieldValue('zpaper', ipfsResponse.path);
-												let url = `${process.env.REACT_APP_IPFS_LINK + ipfsResponse.path}`;
-												console.log(`Document Of Conditions --> ${url}`);
-
-												setDialogMessage('awaiting confirmation');
-												appState.contract.methods
-													.submitNewRequest(
-														title,
-														desc,
-														ipfsResponse.path,
-														+angelTokenPay * Math.pow(10, 9), // angel
-														+laboratoryTokenPay * Math.pow(10, 9), // laboratory
-														instanceCount,
-														category.map((item) => item.value).join(','),
-														process.env.REACT_APP_ZARELA_BUSINESS_CATEGORY,
-														encryptionPublicKey
-													)
-													.send(
-														{
-															from: account,
-															to: process.env.REACT_APP_ZARELA_CONTRACT_ADDRESS,
-															gasPrice: +appState.gas.average * Math.pow(10, 8),
-														},
-														(error, result) => {
-															if (!error) {
-																clearSubmitDialog();
-																toast(`TX Hash: ${result}`, 'success', true, result, {
-																	toastId: result,
-																});
-																history.replace(`/`);
-															} else {
-																clearSubmitDialog();
-																toast(error.message, 'error');
-															}
-														}
+										const ipfsResponse = await ipfs.add(
+											{
+												content: fileRef.current.files[0],
+												path: `${fileMeta[0]}.${fileMeta[1]}`,
+											},
+											{
+												pin: true,
+												wrapWithDirectory: true,
+												progress: (uploaded) => {
+													const uploadedPercent = Math.ceil(
+														(uploaded / fileRef.current.files[0].size) * 100
 													);
 
-												appState.contract.events
-													.orderRegistered({})
-													.on('data', (event) => {
-														clearSubmitDialog();
-
-														toast(
-															`Transaction #${event.returnValues[1]} has been created successfully.`,
-															'success',
-															false,
-															null,
-															{
-																toastId: event.id,
-															}
-														);
-													})
-													.on('error', (error, receipt) => {
-														clearSubmitDialog();
-
-														toast(error.message, 'error');
-														console.error(error, receipt);
-													});
-											} catch (error) {
-												console.error(error);
+													setDialogMessage(`uploading to ipfs - ${uploadedPercent}%`);
+												},
 											}
-										};
-									})
-									.catch((error) => {
-										if (error.code === 4001) {
-											// EIP-1193 userRejectedRequest error
-											clearSubmitDialog();
-											console.log("We can't encrypt anything without the key.");
-										} else {
-											console.error(error);
-										}
-									});
+											/*
+											we use wrapWithDirectory option to be able to download the file with proper file name and extension later.
+											*/
+										);
+										const zpaper_CID = ipfsResponse.cid.toString();
+
+										formik.setFieldValue('zpaper', zpaper_CID);
+										let url = `${process.env.REACT_APP_IPFS_LINK + zpaper_CID}`;
+										console.log(`Zpaper --> ${url}`);
+
+										setDialogMessage('Approve it from your Wallet');
+
+										appState.contract.methods
+											.submitNewRequest(
+												title,
+												desc,
+												zpaper_CID,
+												+angelTokenPay * Math.pow(10, 9), // angel
+												+laboratoryTokenPay * Math.pow(10, 9), // laboratory
+												instanceCount,
+												category.map((item) => item.value).join(','),
+												process.env.REACT_APP_ZARELA_BUSINESS_CATEGORY,
+												encryptionPublicKey
+											)
+											.send(
+												{
+													from: account,
+													to: process.env.REACT_APP_ZARELA_CONTRACT_ADDRESS,
+													gasPrice: +appState.gas.average * Math.pow(10, 8),
+												},
+												(error, result) => {
+													if (!error) {
+														clearSubmitDialog();
+														toast(`TX Hash: ${result}`, 'success', true, result, {
+															toastId: result,
+														});
+														history.replace(`/`);
+														dispatch({
+															type: actionTypes.SET_OLD_DATA_FORM,
+															payload: {},
+														});
+														localStorage.removeItem('create_request_values');
+													} else {
+														clearSubmitDialog();
+														toast(error.message, 'error');
+													}
+												}
+											);
+									} catch (error) {
+										console.error(error);
+									}
+								} catch (error) {
+									if (error.code === 4001) {
+										// EIP-1193 userRejectedRequest error
+										clearSubmitDialog();
+										console.log("We can't encrypt anything without the key.");
+									} else {
+										console.error(error);
+									}
+								}
 							} else {
 								formik.setFieldError('zpaper', 'please select files to upload');
 							}
@@ -216,7 +211,6 @@ const CreateRequest = () => {
 
 	return (
 		<>
-			<TitleBar>Create Request</TitleBar>
 			<Wrapper>
 				{appState.isMobile ? (
 					<NoMobileSupportMessage />
@@ -238,7 +232,7 @@ const CreateRequest = () => {
 								setDialog(false);
 							}}
 						/>
-						<CreateRequestForm formik={formik} ref={fileRef}>
+						<CreateRequestForm formik={formik} ref={fileRef} appState={appState} dispatch={dispatch}>
 							<Persist />
 						</CreateRequestForm>
 					</>

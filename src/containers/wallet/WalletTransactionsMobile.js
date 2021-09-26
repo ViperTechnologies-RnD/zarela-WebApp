@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import copyImage from '../../assets/icons/copy.svg';
 import { timeSince, convertToBiobit, getInput, CopyableText } from '../../utils';
 import { Skeleton } from '@material-ui/lab';
 import { makeStyles } from '@material-ui/core/styles';
 import Pagination from '../../components/Pagination';
+import { getStatusColor } from '../../utils/transactionInput';
+import { isValidInput } from '../../utils/helpers';
 
 const Wrapper = styled.div`
 	width: 100%;
@@ -12,9 +14,21 @@ const Wrapper = styled.div`
 	background: #fff;
 `;
 
+const getStatus = (props) => {
+	if (props.isError && props.isError !== '0')
+		return css`
+			border-left: 4px solid #f62d76;
+		`;
+	else if (props.status !== null)
+		return css`
+			border-left: 4px solid ${props.status};
+		`;
+	else return '';
+};
+
 const TransactionCard = styled.div`
 	border: 1px solid #c4c4c4;
-	border-left: 4px solid ${(props) => props.status};
+	${(props) => getStatus(props)};
 	padding: 16px 14px;
 	margin: ${(props) => props.theme.spacing(2)} 0;
 	border-radius: 3px;
@@ -48,9 +62,7 @@ const HashCol = styled.div`
 `;
 const TextCol = styled(HashCol)`
 	color: #121213;
-	max-width: ${(props) => (props.title ? '165px' : 'unset')};
 	height: ${(props) => (props.title ? '100%' : 'unset')};
-	white-space: ${(props) => (props.title ? 'nowrap' : 'unset')};
 	overflow: ${(props) => (props.title ? 'hidden' : 'unset')};
 	font-size: ${(props) => (props.title ? '16px' : '')};
 	line-height: ${(props) => (props.title ? '20.8px' : '')};
@@ -104,7 +116,7 @@ const WalletTransactionsMobile = ({ isLoading, account, data, props, PAGE_SIZE }
 			{isLoading &&
 				[1, 2, 3].map((index) => {
 					return (
-						<TransactionCard>
+						<TransactionCard isError={'0'}>
 							<TransactionRow>
 								<TitleCol>
 									<SkeletonCol>
@@ -301,10 +313,28 @@ const WalletTransactionsMobile = ({ isLoading, account, data, props, PAGE_SIZE }
 
 			{!isLoading &&
 				currentTableData.map((transaction, index) => (
-					<TransactionCard key={index} status="#F62D76">
+					<TransactionCard
+						key={index}
+						isError={transaction.isError}
+						status={getStatusColor(getInput(transaction.input))}
+					>
 						<TransactionRow>
 							<TitleCol></TitleCol>
-							<TextCol title>{getInput(transaction.input)}</TextCol>
+							{isValidInput(transaction.input) ? (
+								<TextCol title>
+									{`${getInput(transaction.input)} ${
+										transaction.isError && transaction.isError !== '0' ? '(failed)' : ''
+									}`}
+								</TextCol>
+							) : (
+								<CopyableText textToCopy={transaction.input}>
+									<TextCol title>
+										{`${transaction.input.substr(0, 10)} ${
+											transaction.isError && transaction.isError !== '0' ? '(failed)' : ''
+										}`}
+									</TextCol>
+								</CopyableText>
+							)}
 						</TransactionRow>
 						<TransactionRow>
 							<TitleCol>TXN Hash</TitleCol>

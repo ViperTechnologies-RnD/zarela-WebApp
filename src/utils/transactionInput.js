@@ -12,6 +12,8 @@ export function getInput(input) {
 			return 'Create Request';
 		case '0xa9059cbb':
 			return 'BBit transfer';
+		case 'BBit trans':
+			return 'BBit transfer';
 		case '0x5743b65d':
 			return 'Transaction Failed';
 		case '0x1e801cd8':
@@ -19,6 +21,17 @@ export function getInput(input) {
 		case '0x':
 			return 'ETH transfer';
 		default:
-			return input.substr(0, 15);
+			return 'OtherTypes';
+	}
+}
+
+export function getStatusColor(StatusText) {
+	const statusTextInitials = StatusText;
+
+	switch (statusTextInitials) {
+		case 'Zarela Gift':
+			return '#7246D0';
+		default:
+			return null;
 	}
 }

@@ -12,6 +12,7 @@ import styled from 'styled-components';
 import Wallet from './pages/Wallet/Wallet';
 import RequestsList from './pages/RequestsList';
 import Log from './pages/Log/Log';
+import Settings from './pages/Settings';
 import { mainContext } from './state';
 import { supportedChains } from './constants/index';
 import ChainError from './components/ChainError';
@@ -31,8 +32,14 @@ const AppRouter = () => {
 		if (provider) {
 			try {
 				metamaskChainId.then((currentChainId) => {
-					if (parseInt(currentChainId, 16) !== supportedChains.ROPSTEN) {
-						setChainError(true);
+					if (process.env.NODE_ENV === 'production' && process.env.REACT_APP_IS_TEST_NET !== 'true') {
+						if (parseInt(currentChainId, 16) !== supportedChains.MAINNET) {
+							setChainError(true);
+						}
+					} else {
+						if (parseInt(currentChainId, 16) !== supportedChains.ROPSTEN) {
+							setChainError(true);
+						}
 					}
 				});
 				// watch for network changes
@@ -43,7 +50,7 @@ const AppRouter = () => {
 				console.error(error);
 			}
 		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [error, chainId, provider]);
 
 	if (!provider)
@@ -73,6 +80,7 @@ const AppRouter = () => {
 					<Route exact path="/inbox" component={Inbox} />
 					<Route path="/wallet" component={Wallet} />
 					<Route path="/log" component={Log} />
+					<Route path="/settings" component={Settings} />
 				</Switch>
 			</AppWrapper>
 		</Router>

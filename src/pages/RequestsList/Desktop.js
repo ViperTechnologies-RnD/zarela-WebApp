@@ -17,7 +17,7 @@ const RequestsListWrapper = styled.div`
 `;
 
 const Background = styled.div`
-	position: absolute;
+	position: fixed;
 	top: 0;
 	left: 0;
 	width: 100%;
@@ -65,6 +65,11 @@ const RequestListSidebarWrapper = styled.aside`
 	display: flex;
 	flex-wrap: wrap;
 	flex-direction: column;
+	width: 310px;
+`;
+
+const FixedWrapper = styled.div`
+	position: relative;
 	flex: 0 0 310px;
 `;
 
@@ -104,14 +109,7 @@ const useStyles = makeStyles({
 	},
 });
 
-const Desktop = ({
-	requests,
-	appState,
-	web3React,
-	PAGE_SIZE,
-	isLoading,
-	props,
-}) => {
+const Desktop = ({ requests, appState, web3React, PAGE_SIZE, isLoading, props }) => {
 	const [currentPage, setCurrentPage] = useState(1);
 	const classes = useStyles(props);
 
@@ -128,16 +126,20 @@ const Desktop = ({
 			{!isLoading && <Background />}
 			<RequestsListLayout>
 				{isLoading ? (
-					<RequestListSidebarWrapper>
-						{[1, 2, 3].map(() => {
-							return <SkeletonSidebarCard />;
-						})}
-					</RequestListSidebarWrapper>
+					<FixedWrapper>
+						<RequestListSidebarWrapper>
+							{[1, 2, 3].map(() => {
+								return <SkeletonSidebarCard />;
+							})}
+						</RequestListSidebarWrapper>
+					</FixedWrapper>
 				) : (
-					<RequestListSidebarWrapper>
-						<ZarelaDayBox currentDay={appState.zarelaCurrentDay} />
-						<TokenInfoSidebar data={appState} account={web3React.account} />
-					</RequestListSidebarWrapper>
+					<FixedWrapper>
+						<RequestListSidebarWrapper>
+							<ZarelaDayBox currentDay={appState.zarelaCurrentDay} />
+							<TokenInfoSidebar data={appState} account={web3React.account} />
+						</RequestListSidebarWrapper>
+					</FixedWrapper>
 				)}
 				<RequestsListContentWrapper>
 					{isLoading

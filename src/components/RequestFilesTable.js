@@ -1,18 +1,29 @@
-import React from 'react';
-import styled from 'styled-components';
+import React, { useState, useContext, useCallback } from 'react';
+import styled, { css } from 'styled-components';
 import { SmallCheckbox } from './Elements/Checkbox';
 import downloadIcon from '../assets/icons/download.svg';
+import { pendingFilesContext } from '../state/pendingFilesProvider';
 import { Spacer } from './Elements/Spacer';
 import { Scrollbar } from './Elements/Scrollbar';
 import { timeSince, CopyableText } from '../utils';
 import publicKeyIcon from '../assets/icons/public-key.svg';
 import confirmIcon from '../assets/icons/confirmed.svg';
+import caretDownIcon from '../assets/icons/caret-down.svg';
+import caretUpIcon from '../assets/icons/caret-up.svg';
+import pendingFileSpinner from '../assets/loader/pending-file-spinner.svg';
+import WalletAddress from './WalletAddress';
+import { localStorageContext } from '../state/localStorageProvider/LocalStoragePriveder';
 
 const Table = styled.div`
 	display: flex;
 	flex-direction: column;
 	width: 100%;
 	margin-top: ${(props) => props.theme.spacing(3)};
+`;
+
+const PendingFileIcon = styled.img`
+	width: 22px;
+	margin-right: ${(props) => (props.noMargin ? 0 : props.theme.spacing(1.5))};
 `;
 
 const CellWrapper = styled.div`
@@ -28,6 +39,12 @@ const CellWrapper = styled.div`
 	}
 `;
 
+const EmptyRowMessage = styled.div`
+	flex: 1;
+	padding: ${(props) => props.theme.spacing(2)};
+	background: white;
+`;
+
 const Row = styled.section`
 	display: flex;
 	margin-bottom: 4px;
@@ -37,7 +54,7 @@ const Row = styled.section`
 	}
 
 	${CellWrapper}:nth-of-type(2) {
-		flex: 0 0 420px;
+		flex: 0 0 500px;
 	}
 
 	${CellWrapper}:nth-of-type(3) {
@@ -45,7 +62,7 @@ const Row = styled.section`
 	}
 `;
 
-const Cell = styled.div`
+const CellStyles = css`
 	display: flex;
 	align-items: center;
 	min-height: 48px;
@@ -61,6 +78,14 @@ const Cell = styled.div`
 	}
 `;
 
+const Cell = styled.div`
+	${CellStyles};
+`;
+
+const Address = styled(WalletAddress)`
+	${CellStyles};
+`;
+
 const PublicKeyIcon = styled.img`
 	flex: 0 0 40px;
 	height: 40px;
@@ -72,11 +97,32 @@ const CustomCheckbox = styled(SmallCheckbox)`
 `;
 
 const FilesListWrapper = styled.div`
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	padding: ${(props) => props.theme.spacing(1)};
 	margin-bottom: ${(props) => props.theme.spacing(2)};
 	height: 100%;
+`;
+
+const CollapseIcon = styled.img`
+	position: absolute;
+	right: 16px;
+	top: 10px;
+	width: 24px;
+`;
+
+const CollapsedFilesListWrapper = styled(FilesListWrapper)`
+	flex-direction: row;
+	flex-wrap: nowrap;
+	justify-content: space-between;
+	align-items: center;
+	margin: 0;
+`;
+
+const CollapsedLabel = styled.p`
+	font-size: 14px;
+	line-height: 20px;
 `;
 
 const FilesList = styled.div`
@@ -101,7 +147,7 @@ const FileItemCol = styled.div`
 	color: ${(props) => props.theme.textPrimary};
 
 	&:nth-child(1) {
-		flex: 1 0 170px;
+		flex: 1 0 113px;
 	}
 	&:nth-child(2) {
 		position: relative;
@@ -194,17 +240,66 @@ const RequestFilesTable = ({
 	isAllChecked,
 	isAllApproved,
 	changeAll,
+	fulfilled,
 	signalDownloadHandler,
+	requestID,
 }) => {
+	const { localState } = useContext(localStorageContext);
+	const PendingFiles = useContext(pendingFilesContext);
+	const { pendingFiles } = PendingFiles;
+	const { blockList, hideList } = localState;
+	const [isExpanded, setExpanded] = useState(null);
+
+	const getFileStatus = useCallback(
+		(originalIndex, originalStatus) => {
+			if (originalStatus === true) return 'approved';
+			let status = 'available';
+
+			for (let i = 0; i < Object.values(pendingFiles.pending).length; i++) {
+				const item = Object.values(pendingFiles.pending)[i];
+				if (item.requestID === requestID && item.originalIndexes.includes(originalIndex)) {
+					status = 'pending';
+					break;
+				}
+			}
+			return status;
+		},
+		[pendingFiles.pending]
+	);
+
+	// filter data with hidden and blocked addresses
+	const renderableData = { ...data };
+
+	// filter blocked
+	Object.keys(data).forEach((address) => {
+		if (blockList.find((item) => item.toLowerCase() === address.toLowerCase())) delete renderableData[address];
+	});
+
+	//filter hidden
+	Object.keys(data).forEach((address) => {
+		if (hideList[address.toLowerCase()]?.includes(requestID.toString())) delete renderableData[address];
+	});
+
+	if (Object.keys(renderableData).length === 0)
+		return (
+			<Table>
+				<Row>
+					<EmptyRowMessage>You do not have any visible requests here.</EmptyRowMessage>
+				</Row>
+			</Table>
+		);
 	return (
 		<Table>
 			<Row>
 				<CellWrapper>
 					<Cell data-tour="inbox-three">
-						{isAllApproved() ? (
+						{isAllApproved() === 'approved' ? (
 							<ConfirmedIcon src={confirmIcon} noMargin />
+						) : isAllApproved() === 'pending' ? (
+							<PendingFileIcon src={pendingFileSpinner} noMargin />
 						) : (
 							<CustomCheckbox
+								disabled={fulfilled}
 								checked={isAllChecked()}
 								onChange={(e) => {
 									if (e.target.checked === true) {
@@ -224,14 +319,17 @@ const RequestFilesTable = ({
 					<Cell>Uploaded files</Cell>
 				</CellWrapper>
 			</Row>
-			{Object.keys(data).map((contributorAddress, index) => (
+			{Object.keys(renderableData).map((contributorAddress, index) => (
 				<Row key={contributorAddress}>
 					<CellWrapper>
 						<Cell>
-							{isBulkApproved(contributorAddress) ? (
+							{isBulkApproved(contributorAddress) === 'approved' ? (
 								<ConfirmedIcon src={confirmIcon} noMargin />
+							) : isBulkApproved(contributorAddress) === 'pending' ? (
+								<PendingFileIcon src={pendingFileSpinner} noMargin />
 							) : (
 								<CustomCheckbox
+									disabled={fulfilled}
 									checked={isBulkChecked(contributorAddress)}
 									onChange={(e) => {
 										if (e.target.checked === true) {
@@ -245,27 +343,23 @@ const RequestFilesTable = ({
 						</Cell>
 					</CellWrapper>
 					<CellWrapper data-tour="inbox-two">
-						<CopyableText textToCopy={contributorAddress}>
-							<Cell pointer>
-								<PublicKeyIcon src={publicKeyIcon} />
-								{contributorAddress}
-							</Cell>
-						</CopyableText>
+						<Address publicKey={contributorAddress} requestID={requestID} pointer></Address>
 					</CellWrapper>
 					<CellWrapper flex={1}>
-						{true ? (
+						{(isExpanded === null && index === 0) || isExpanded === contributorAddress ? (
 							<FilesListWrapper>
-								<FilesTableHeader>
+								<FilesTableHeader onClick={() => setExpanded(false)}>
 									<FilesTableHeaderCol flex={3}>
-										<FilesTableHeaderTitle>{`There are ${data[contributorAddress].length} files available`}</FilesTableHeaderTitle>
+										<FilesTableHeaderTitle>{`There are ${renderableData[contributorAddress].length} files available`}</FilesTableHeaderTitle>
 									</FilesTableHeaderCol>
 									<Spacer />
 									<FilesTableHeaderCol flex={'1 0 62px'}>
 										<FilesTableHeaderTitle>Date</FilesTableHeaderTitle>
 									</FilesTableHeaderCol>
+									<CollapseIcon src={caretUpIcon} />
 								</FilesTableHeader>
 								<FilesList>
-									{data[contributorAddress].map(
+									{renderableData[contributorAddress].map(
 										(
 											{ ipfsHash, status, originalIndex, AesEncryptedKey, timestamp },
 											fileIndex
@@ -273,10 +367,13 @@ const RequestFilesTable = ({
 											return (
 												<FileItemRow key={originalIndex}>
 													<FileItemCol>
-														{status === true ? (
+														{getFileStatus(originalIndex, status) === 'approved' ? (
 															<ConfirmedIcon src={confirmIcon} />
+														) : getFileStatus(originalIndex, status) === 'pending' ? (
+															<PendingFileIcon src={pendingFileSpinner} />
 														) : (
 															<FileCheckbox
+																disabled={fulfilled}
 																checked={selected.includes(originalIndex)}
 																onChange={(e) => {
 																	if (e.target.checked === true) {
@@ -288,16 +385,18 @@ const RequestFilesTable = ({
 															/>
 														)}
 														<FileName>
-															{
-																originalIndex +
-																	'.' +
-																	ipfsHash +
-																	`  (File #${fileIndex + 1})`
-															}
+															{originalIndex +
+																'.' +
+																ipfsHash +
+																`  (File #${fileIndex + 1})`}
 														</FileName>
 													</FileItemCol>
 													<FileItemCol>
-														<DownloadButton onClick={() => signalDownloadHandler(ipfsHash, AesEncryptedKey)}>
+														<DownloadButton
+															onClick={() =>
+																signalDownloadHandler(ipfsHash, AesEncryptedKey)
+															}
+														>
 															<DownloadButtonImage src={downloadIcon} />
 														</DownloadButton>
 													</FileItemCol>
@@ -311,9 +410,12 @@ const RequestFilesTable = ({
 								</FilesList>
 							</FilesListWrapper>
 						) : (
-							<FilesListWrapper>
-								there are {data[contributorAddress].length} files available
-							</FilesListWrapper>
+							<CollapsedFilesListWrapper onClick={() => setExpanded(contributorAddress)}>
+								<CollapsedLabel>
+									there are {renderableData[contributorAddress].length} files available
+								</CollapsedLabel>
+								<CollapseIcon src={caretDownIcon} />
+							</CollapsedFilesListWrapper>
 						)}
 					</CellWrapper>
 				</Row>
